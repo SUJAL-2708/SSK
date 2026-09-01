@@ -1,8 +1,8 @@
-# 🧠 SSK — Smart Semantic Knowledge
+# 🧠 SSK — STUDENT SMART KNOWLEDGE
 
 ### 🚀 An AI Assistant Designed to Remember, Understand, and Retrieve
 
-SSK (Smart Semantic Knowledge) is an AI-powered personal assistant designed to go beyond traditional chatbot systems by providing **short-term memory, long-term semantic memory, intelligent memory retrieval, document understanding, and voice interaction**.
+SSK is an AI-powered personal assistant designed to go beyond traditional chatbot systems by providing **short-term memory, long-term semantic memory, intelligent memory retrieval, document understanding, and voice interaction**.
 
 Instead of treating every conversation as a completely new interaction, SSK is designed to maintain useful information over time and retrieve it only when it is relevant to the user's current request.
 
