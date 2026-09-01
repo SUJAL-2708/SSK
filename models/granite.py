@@ -1,5 +1,4 @@
 import json
-import re
 import ollama
 
 from config.settings import (
@@ -9,44 +8,23 @@ from config.settings import (
 
 
 class Granite:
-    """
-    Interface for Granite 4.1 3B.
-
-    Granite is responsible for:
-    - summarization
-    - memory decisions
-    - memory classification
-    - retrieval decisions
-    """
 
     def __init__(self):
+
         self.client = ollama.Client(
             host=OLLAMA_HOST
         )
 
         self.model = SMALL_MODEL
 
-    def generate(self, prompt: str) -> str:
-        """
-        Generate a normal text response.
-        """
+    # =====================================
+    # GENERATE JSON
+    # =====================================
 
-        response = self.client.chat(
-            model=self.model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
-
-        return response["message"]["content"]
-
-    def generate_json(self, prompt: str) -> dict:
-        """
-        Ask Granite for JSON and safely parse it.
-        """
+    def generate_json(
+        self,
+        prompt: str
+    ) -> dict:
 
         response = self.client.chat(
             model=self.model,
@@ -56,86 +34,78 @@ class Granite:
                     "content": prompt
                 }
             ],
-            format="json"
+            options={
+                "temperature": 0
+            }
         )
 
-        content = response["message"]["content"]
+        content = response["message"]["content"].strip()
+
+        # Remove markdown JSON fences if Granite
+        # happens to return them.
+
+        if content.startswith("```"):
+
+            content = content.replace(
+                "```json",
+                ""
+            )
+
+            content = content.replace(
+                "```",
+                ""
+            )
+
+            content = content.strip()
 
         try:
-            return json.loads(content)
+
+            return json.loads(
+                content
+            )
 
         except json.JSONDecodeError:
 
-            # Try extracting JSON from accidental markdown
-            match = re.search(
-                r"\{.*\}",
-                content,
-                re.DOTALL
+            print(
+                "\n[GRANITE ERROR] "
+                "Invalid JSON returned."
             )
 
-            if match:
-                return json.loads(
-                    match.group()
-                )
-
-            raise ValueError(
-                f"Granite returned invalid JSON:\n{content}"
+            print(
+                "Granite output:"
             )
 
+            print(content)
+
+            return {
+                "retrieve_memory": False,
+                "retrieve_documents": False,
+                "blocks": [],
+                "reason": "Granite returned invalid JSON."
+            }
+
     # =====================================
-    # SUMMARIZATION
+    # RETRIEVAL DECISION
     # =====================================
 
-    def summarize(self, conversation: str) -> str:
+    def should_retrieve(
+        self,
+        user_input: str
+    ) -> dict:
 
         prompt = f"""
-You are the memory summarization component of an AI assistant.
+You are the memory and document retrieval
+decision system of SSK.
 
-Summarize the following conversation.
+Your job is to decide whether SSK needs
+long-term personal memory or uploaded
+documents to answer the user's current
+message.
 
-Keep:
-- important facts
-- decisions
-- user preferences
-- projects
-- academic information
-- work information
-- hobbies
-- future plans
-- important events
-
-Do NOT include:
-- meaningless small talk
-- repeated information
-- greetings
-- filler
-
-Conversation:
-
-{conversation}
-
-Return only the summary.
-"""
-
-        return self.generate(prompt)
-
-    # =====================================
-    # MEMORY DECISION
-    # =====================================
-
-    def should_retrieve(self, user_input: str) -> dict:
-
-        prompt = f"""
-You are the memory retrieval decision system.
-
-Determine whether the AI assistant needs long-term memory
-to answer the user's current message.
-
-Current user message:
-
+CURRENT USER MESSAGE:
 {user_input}
 
-Available memory blocks:
+PERSONAL MEMORY CATEGORIES:
 
 - user
 - project
@@ -144,120 +114,116 @@ Available memory blocks:
 - work
 - other
 
-Return JSON exactly like:
+AVAILABLE RETRIEVAL SOURCES:
+
+1. Personal memory
+2. Uploaded documents
+3. Both
+4. Neither
+
+RULES:
+
+- Use personal memory when the question
+  depends on information about the user,
+  their projects, hobbies, academics,
+  work, or other saved personal information.
+
+- Use uploaded documents when the user
+  asks about information that may exist
+  inside an uploaded document.
+
+- Use both when both personal memory and
+  uploaded documents can help.
+
+- Use neither when the current message
+  can be answered without long-term
+  information.
+
+Return ONLY valid JSON.
+
+FORMAT:
 
 {{
-    "retrieve": true,
+    "retrieve_memory": true,
+    "retrieve_documents": false,
     "blocks": ["project"],
     "reason": "short explanation"
 }}
 
-If long-term memory is NOT required:
+For document-only retrieval:
 
 {{
-    "retrieve": false,
+    "retrieve_memory": false,
+    "retrieve_documents": true,
     "blocks": [],
     "reason": "short explanation"
 }}
 
-Only retrieve memory when it can meaningfully improve the answer.
-"""
-
-        result = self.generate_json(prompt)
-
-        result.setdefault("retrieve", False)
-        result.setdefault("blocks", [])
-        result.setdefault("reason", "")
-
-        return result
-
-    # =====================================
-    # MEMORY EXTRACTION
-    # =====================================
-
-    def extract_memories(self, summary: str) -> list:
-
-        prompt = f"""
-You are the long-term memory extraction system.
-
-From the following conversation summary, identify information
-that is genuinely useful to remember about the user.
-
-Do NOT save:
-- temporary statements
-- greetings
-- normal conversation
-- random facts with no future usefulness
-- one-time requests
-
-Potential memories:
-
-{summary}
-
-Return JSON exactly like:
+For both:
 
 {{
-    "memories": [
-        {{
-            "content": "memory content",
-            "importance": 7
-        }}
-    ]
+    "retrieve_memory": true,
+    "retrieve_documents": true,
+    "blocks": ["project"],
+    "reason": "short explanation"
 }}
 
-Importance:
-1-3 = unimportant
-4-6 = useful
-7-8 = important
-9-10 = extremely important
+For no retrieval:
 
-Return an empty list if nothing should be remembered.
+{{
+    "retrieve_memory": false,
+    "retrieve_documents": false,
+    "blocks": [],
+    "reason": "short explanation"
+}}
+
+IMPORTANT:
+
+The "blocks" field may ONLY contain:
+
+"user"
+"project"
+"hobby"
+"academics"
+"work"
+"other"
+
+Do not add any other values.
+
+Do not write anything outside the JSON.
 """
 
-        result = self.generate_json(prompt)
+        result = self.generate_json(
+            prompt
+        )
 
-        return result.get(
-            "memories",
+        # =================================
+        # SAFETY DEFAULTS
+        # =================================
+
+        result.setdefault(
+            "retrieve_memory",
+            False
+        )
+
+        result.setdefault(
+            "retrieve_documents",
+            False
+        )
+
+        result.setdefault(
+            "blocks",
             []
         )
 
-    # =====================================
-    # MEMORY CLASSIFICATION
-    # =====================================
+        result.setdefault(
+            "reason",
+            ""
+        )
 
-    def classify_memory(self, content: str) -> dict:
-
-        prompt = f"""
-Classify this memory into exactly ONE category.
-
-Memory:
-
-{content}
-
-Categories:
-
-user
-project
-hobby
-academics
-work
-other
-
-Return JSON:
-
-{{
-    "block": "project"
-}}
-
-Return only one category.
-"""
-
-        result = self.generate_json(prompt)
-
-        block = result.get(
-            "block",
-            "other"
-        ).lower().strip()
+        # =================================
+        # VALIDATE BLOCKS
+        # =================================
 
         allowed = {
             "user",
@@ -268,9 +234,29 @@ Return only one category.
             "other"
         }
 
-        if block not in allowed:
-            block = "other"
+        if not isinstance(
+            result["blocks"],
+            list
+        ):
 
-        return {
-            "block": block
-        }
+            result["blocks"] = []
+
+        result["blocks"] = [
+            block
+            for block in result["blocks"]
+            if block in allowed
+        ]
+
+        # =================================
+        # FORCE BOOLEAN VALUES
+        # =================================
+
+        result["retrieve_memory"] = bool(
+            result["retrieve_memory"]
+        )
+
+        result["retrieve_documents"] = bool(
+            result["retrieve_documents"]
+        )
+
+        return result

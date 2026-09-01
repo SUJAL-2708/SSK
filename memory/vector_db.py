@@ -1,12 +1,10 @@
-from typing import Any
-from unittest import result
-
 import chromadb
 import ollama
 
 from config.settings import (
     CHROMA_PATH,
     CHROMA_COLLECTION_PREFIX,
+    DOCUMENT_COLLECTION,
     EMBEDDING_MODEL,
     OLLAMA_HOST
 )
@@ -25,7 +23,7 @@ class VectorMemory:
         )
 
     # =====================================
-    # COLLECTION
+    # PERSONAL MEMORY COLLECTION
     # =====================================
 
     def _collection_name(
@@ -44,7 +42,19 @@ class VectorMemory:
     ):
 
         return self.client.get_or_create_collection(
-            name=self._collection_name(block)
+            name=self._collection_name(
+                block
+            )
+        )
+
+    # =====================================
+    # DOCUMENT COLLECTION
+    # =====================================
+
+    def _get_document_collection(self):
+
+        return self.client.get_or_create_collection(
+            name=DOCUMENT_COLLECTION
         )
 
     # =====================================
@@ -64,7 +74,7 @@ class VectorMemory:
         return response["embeddings"][0]
 
     # =====================================
-    # SAVE
+    # SAVE PERSONAL MEMORY
     # =====================================
 
     def save_memory(
@@ -94,13 +104,56 @@ class VectorMemory:
                 {
                     "memory_id": memory_id,
                     "block": block,
-                    "importance": importance
+                    "importance": importance,
+                    "type": "memory"
                 }
             ]
         )
 
     # =====================================
-    # SEARCH
+    # SAVE DOCUMENT CHUNK
+    # =====================================
+
+    def save_document_chunk(
+        self,
+        document_id: str,
+        chunk_id: str,
+        document_name: str,
+        content: str,
+        chunk_index: int
+    ):
+
+        collection = (
+            self._get_document_collection()
+        )
+
+        embedding = self.embed(
+            content
+        )
+
+        vector_id = (
+            f"{document_id}_{chunk_id}"
+        )
+
+        collection.upsert(
+            ids=[vector_id],
+
+            documents=[content],
+
+            embeddings=[embedding],
+
+            metadatas=[
+                {
+                    "document_id": document_id,
+                    "document_name": document_name,
+                    "chunk_index": chunk_index,
+                    "type": "document"
+                }
+            ]
+        )
+
+    # =====================================
+    # SEARCH PERSONAL MEMORY
     # =====================================
 
     def search(
@@ -140,7 +193,11 @@ class VectorMemory:
             metadatas = result["metadatas"]
             distances = result["distances"]
 
-            if documents is None or metadatas is None or distances is None:
+            if (
+                not documents
+                or not metadatas
+                or not distances
+            ):
                 continue
 
             documents = documents[0]
@@ -166,7 +223,8 @@ class VectorMemory:
                             "importance",
                             0
                         ),
-                        "distance": distance
+                        "distance": distance,
+                        "type": "memory"
                     }
                 )
 
@@ -175,3 +233,79 @@ class VectorMemory:
         )
 
         return results[:limit]
+
+    # =====================================
+    # SEARCH DOCUMENTS
+    # =====================================
+
+    def search_documents(
+        self,
+        query: str,
+        limit: int = 5
+    ) -> list:
+
+        collection = (
+            self._get_document_collection()
+        )
+
+        if collection.count() == 0:
+            return []
+
+        query_embedding = self.embed(
+            query
+        )
+
+        result = collection.query(
+            query_embeddings=[
+                query_embedding
+            ],
+
+            n_results=min(
+                limit,
+                collection.count()
+            )
+        )
+
+        documents = result["documents"]
+
+        metadatas = result["metadatas"]
+
+        distances = result["distances"]
+
+        if (
+            not documents
+            or not metadatas
+            or not distances
+        ):
+            return []
+
+        documents = documents[0]
+        metadatas = metadatas[0]
+        distances = distances[0]
+
+        results = []
+
+        for document, metadata, distance in zip(
+            documents,
+            metadatas,
+            distances
+        ):
+
+            results.append(
+                {
+                    "content": document,
+                    "document_id": metadata.get(
+                        "document_id"
+                    ),
+                    "document_name": metadata.get(
+                        "document_name"
+                    ),
+                    "chunk_index": metadata.get(
+                        "chunk_index"
+                    ),
+                    "distance": distance,
+                    "type": "document"
+                }
+            )
+
+        return results

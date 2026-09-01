@@ -5,42 +5,55 @@ from models.qwen import Qwen
 from memory.redis import RedisMemory
 from memory.consolidation import MemoryConsolidator
 from memory.retrieval import MemoryRetriever
+from memory.documents import DocumentManager
 
 
 class SSK:
 
     def __init__(self):
 
-        print("Initializing SSK...")
+        print("\nInitializing SSK...")
 
-        # ---------------------------------
+        # ===============================
         # ACTIVE MEMORY
-        # ---------------------------------
+        # ===============================
 
         self.redis = RedisMemory()
 
-        # ---------------------------------
+        # ===============================
         # MEMORY CONSOLIDATION
-        # ---------------------------------
+        # ===============================
 
-        self.consolidator = MemoryConsolidator()
+        self.consolidator = (
+            MemoryConsolidator()
+        )
 
-        # ---------------------------------
-        # LONG-TERM MEMORY RETRIEVAL
-        # ---------------------------------
+        # ===============================
+        # LONG-TERM RETRIEVAL
+        # ===============================
 
-        self.retriever = MemoryRetriever()
+        self.retriever = (
+            MemoryRetriever()
+        )
 
-        # ---------------------------------
-        # BIG LANGUAGE MODEL
-        # ---------------------------------
+        # ===============================
+        # DOCUMENT SYSTEM
+        # ===============================
+
+        self.documents = (
+            DocumentManager()
+        )
+
+        # ===============================
+        # BIG MODEL
+        # ===============================
 
         self.qwen = Qwen()
 
         print("SSK initialized.")
 
     # =====================================
-    # PROCESS USER INPUT
+    # NORMAL USER MESSAGE
     # =====================================
 
     def process(
@@ -48,28 +61,27 @@ class SSK:
         user_input: str
     ):
 
-        if not user_input:
-            return None
-
         print(
             f"\nUSER: {user_input}"
         )
 
-        # ---------------------------------
-        # SAVE USER MESSAGE TO REDIS
-        # ---------------------------------
+        # -------------------------------
+        # SAVE TO REDIS
+        # -------------------------------
 
         self.redis.add_message(
             role="user",
             content=user_input
         )
 
-        # ---------------------------------
-        # CHECK LONG-TERM MEMORY
-        # ---------------------------------
+        # -------------------------------
+        # RETRIEVE LONG-TERM MEMORY
+        # -------------------------------
 
-        retrieved = self.retriever.retrieve(
-            user_input
+        retrieved = (
+            self.retriever.retrieve(
+                user_input
+            )
         )
 
         retrieved_context = (
@@ -78,17 +90,17 @@ class SSK:
             )
         )
 
-        # ---------------------------------
-        # GET CURRENT ACTIVE MEMORY
-        # ---------------------------------
+        # -------------------------------
+        # ACTIVE REDIS MEMORY
+        # -------------------------------
 
         active_memory = (
             self.redis.formatted()
         )
 
-        # ---------------------------------
-        # SEND EVERYTHING TO QWEN
-        # ---------------------------------
+        # -------------------------------
+        # QWEN RESPONSE
+        # -------------------------------
 
         response = self.qwen.generate(
             user_input=user_input,
@@ -96,26 +108,22 @@ class SSK:
             retrieved_memory=retrieved_context
         )
 
-        # ---------------------------------
-        # DISPLAY RESPONSE
-        # ---------------------------------
-
         print(
             f"\nSSK: {response}"
         )
 
-        # ---------------------------------
-        # SAVE ASSISTANT RESPONSE TO REDIS
-        # ---------------------------------
+        # -------------------------------
+        # SAVE RESPONSE TO REDIS
+        # -------------------------------
 
         self.redis.add_message(
             role="assistant",
             content=response
         )
 
-        # ---------------------------------
-        # CHECK 10-MESSAGE MEMORY CYCLE
-        # ---------------------------------
+        # -------------------------------
+        # MEMORY CONSOLIDATION
+        # -------------------------------
 
         if self.redis.limit_reached():
 
@@ -128,112 +136,45 @@ class SSK:
 
         return response
 
+    # =====================================
+    # DOCUMENT
+    # =====================================
 
-# =========================================
-# VOICE MODE
-# =========================================
+    def add_document(
+        self,
+        file_path: str
+    ):
 
-def voice_mode(ssk):
+        print(
+            "\n[DOCUMENT] Reading document..."
+        )
 
-    print("\n==============================")
-    print("       SSK VOICE MODE")
-    print("==============================")
-
-    print("\nSpeak into your microphone.")
-    print("Press Ctrl+C to stop.\n")
-
-    while True:
-
-        try:
-
-            # -----------------------------
-            # MICROPHONE → STT → TEXT
-            # -----------------------------
-
-            user_input = get_speech_text()
-
-            if not user_input:
-                print(
-                    "[STT] No speech detected."
-                )
-                continue
-
-            # -----------------------------
-            # SEND TEXT TO SSK
-            # -----------------------------
-
-            ssk.process(
-                user_input
+        result = (
+            self.documents.add_document(
+                file_path
             )
+        )
 
-        except KeyboardInterrupt:
+        print(
+            "\n[DOCUMENT] Successfully added."
+        )
 
-            print(
-                "\n\n[SSK] Voice mode stopped."
-            )
+        print(
+            f"Name    : "
+            f"{result['document_name']}"
+        )
 
-            break
+        print(
+            f"Type    : "
+            f"{result['file_type']}"
+        )
 
-        except Exception as error:
+        print(
+            f"Chunks  : "
+            f"{result['chunks']}"
+        )
 
-            print(
-                f"\n[ERROR] {error}"
-            )
-
-            print(
-                "[SSK] Trying again...\n"
-            )
-
-
-# =========================================
-# TEXT MODE
-# =========================================
-
-def text_mode(ssk):
-
-    print("\n==============================")
-    print("        SSK TEXT MODE")
-    print("==============================")
-
-    print(
-        "\nType your message."
-    )
-
-    print(
-        "Type 'exit' to stop.\n"
-    )
-
-    while True:
-
-        try:
-
-            user_input = input(
-                "You: "
-            ).strip()
-
-            if user_input.lower() == "exit":
-                break
-
-            if not user_input:
-                continue
-
-            ssk.process(
-                user_input
-            )
-
-        except KeyboardInterrupt:
-
-            print(
-                "\n\n[SSK] Text mode stopped."
-            )
-
-            break
-
-        except Exception as error:
-
-            print(
-                f"\n[ERROR] {error}\n"
-            )
+        return result
 
 
 # =========================================
@@ -244,32 +185,203 @@ if __name__ == "__main__":
 
     ssk = SSK()
 
-    print("\n==============================")
-    print("            SSK")
-    print("==============================")
+    print(
+        "\n=============================="
+    )
 
-    print("\nChoose input mode:")
-    print("1. Voice")
-    print("2. Text")
+    print(
+        "             SSK"
+    )
 
-    while True:
+    print(
+        "=============================="
+    )
 
-        choice = input(
-            "\nEnter 1 or 2: "
-        ).strip()
+    print(
+        "\nChoose input mode:"
+    )
 
-        if choice == "1":
+    print(
+        "1. Voice"
+    )
 
-            voice_mode(ssk)
-            break
+    print(
+        "2. Text"
+    )
 
-        elif choice == "2":
+    print(
+        "3. Add Document"
+    )
 
-            text_mode(ssk)
-            break
+    mode = input(
+        "\nEnter 1, 2 or 3: "
+    ).strip()
 
-        else:
+    # =====================================
+    # VOICE MODE
+    # =====================================
+
+    if mode == "1":
+
+        print(
+            "\n=============================="
+        )
+
+        print(
+            "        SSK VOICE MODE"
+        )
+
+        print(
+            "=============================="
+        )
+
+        while True:
+
+            try:
+
+                user_input = (
+                    get_speech_text()
+                )
+
+            except Exception as error:
+
+                print(
+                    f"\n[STT ERROR] {error}"
+                )
+
+                break
+
+            if not user_input:
+                continue
 
             print(
-                "Please enter 1 or 2."
+                f"\nYou: {user_input}"
             )
+
+            if user_input.lower() == "exit":
+                break
+
+            ssk.process(
+                user_input
+            )
+
+    # =====================================
+    # TEXT MODE
+    # =====================================
+
+    elif mode == "2":
+
+        print(
+            "\n=============================="
+        )
+
+        print(
+            "        SSK TEXT MODE"
+        )
+
+        print(
+            "=============================="
+        )
+
+        print(
+            "\nType your message."
+        )
+
+        print(
+            "Type 'exit' to stop."
+        )
+
+        print(
+            "Use '/document <path>' "
+            "to add a document."
+        )
+
+        while True:
+
+            user_input = input(
+                "\nYou: "
+            ).strip()
+
+            if not user_input:
+                continue
+
+            if user_input.lower() == "exit":
+                break
+
+            # ---------------------------
+            # DOCUMENT COMMAND
+            # ---------------------------
+
+            if user_input.lower().startswith(
+                "/document "
+            ):
+
+                file_path = user_input[
+                    len("/document "):
+                ].strip()
+
+                try:
+
+                    ssk.add_document(
+                        file_path
+                    )
+
+                except Exception as error:
+
+                    print(
+                        f"\n[DOCUMENT ERROR] "
+                        f"{error}"
+                    )
+
+                continue
+
+            # ---------------------------
+            # NORMAL CHAT
+            # ---------------------------
+
+            ssk.process(
+                user_input
+            )
+
+    # =====================================
+    # DOCUMENT MODE
+    # =====================================
+
+    elif mode == "3":
+
+        print(
+            "\n=============================="
+        )
+
+        print(
+            "       DOCUMENT MODE"
+        )
+
+        print(
+            "=============================="
+        )
+
+        file_path = input(
+            "\nEnter document path: "
+        ).strip()
+
+        if file_path:
+
+            try:
+
+                ssk.add_document(
+                    file_path
+                )
+
+            except Exception as error:
+
+                print(
+                    f"\n[DOCUMENT ERROR] "
+                    f"{error}"
+                )
+
+    else:
+
+        print(
+            "\nInvalid option."
+        )
